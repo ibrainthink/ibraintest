@@ -1,0 +1,12 @@
+{
+  "name": "iBrain 생각의고수 테스트지 평가",
+  "short_name": "생각의고수",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#faf8f3",
+  "theme_color": "#1b2f4b",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
