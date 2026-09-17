@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>iBrain | 로그인</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#1b2f4b" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="icon" href="icon-192.png" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="auth-shell">
+  <div class="auth-card">
+    <svg class="brand-mark" viewBox="0 0 44 40" fill="none">
+      <polygon points="22,2 40,12 40,28 22,38 4,28 4,12" fill="none" stroke="#1b2f4b" stroke-width="2.5"/>
+      <polygon points="22,11 32,17 32,25 22,31 12,25 12,17" fill="#d98a3d" opacity="0.85"/>
+    </svg>
+    <h1>iBrain</h1>
+    <p class="sub">테스트지 평가 시스템</p>
+
+    <div class="tab-row">
+      <button id="tabLogin" class="active">로그인</button>
+      <button id="tabSignup">회원가입</button>
+    </div>
+
+    <!-- 로그인 폼 -->
+    <form id="loginForm">
+      <div class="field">
+        <label>이메일</label>
+        <input type="email" id="loginEmail" required autocomplete="email" />
+      </div>
+      <div class="field">
+        <label>비밀번호</label>
+        <input type="password" id="loginPassword" required autocomplete="current-password" />
+      </div>
+      <button type="submit" class="btn-primary">로그인</button>
+    </form>
+
+    <!-- 회원가입 폼 -->
+    <form id="signupForm" style="display:none;">
+      <div class="field">
+        <label>이름</label>
+        <input type="text" id="signupName" required placeholder="담당 선생님 성함" />
+      </div>
+      <div class="field">
+        <label>소속 기관</label>
+        <input type="text" id="signupInstitution" required placeholder="예: iBrain OO점" />
+      </div>
+      <div class="field">
+        <label>이메일</label>
+        <input type="email" id="signupEmail" required autocomplete="email" />
+      </div>
+      <div class="field">
+        <label>비밀번호</label>
+        <input type="password" id="signupPassword" required minlength="6" autocomplete="new-password" placeholder="6자 이상" />
+      </div>
+      <button type="submit" class="btn-accent">가입 신청</button>
+    </form>
+
+    <div id="formMsg"></div>
+  </div>
+</div>
+
+<script type="module">
+  import { auth, db } from "./firebase-config.js";
+  import {
+    signInWithEmailAndPassword,
+    createUserWithEmailAndPassword,
+    signOut,
+    onAuthStateChanged,
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  import {
+    doc, setDoc, getDoc,
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+  // 이미 로그인되어 있고 승인된 계정이면 로그인 화면을 건너뛰고 바로 대시보드로 이동
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) return;
+    try {
+      const userDoc = await getDoc(doc(db, "users", user.uid));
+      if (userDoc.exists() && userDoc.data().approved) {
+        window.location.href = "dashboard.html";
+      }
+    } catch (e) { /* 무시하고 로그인 화면 유지 */ }
+  });
+
+  const tabLogin = document.getElementById("tabLogin");
+  const tabSignup = document.getElementById("tabSignup");
+  const loginForm = document.getElementById("loginForm");
+  const signupForm = document.getElementById("signupForm");
+  const msgBox = document.getElementById("formMsg");
+
+  tabLogin.onclick = () => {
+    tabLogin.classList.add("active");
+    tabSignup.classList.remove("active");
+    loginForm.style.display = "block";
+    signupForm.style.display = "none";
+    msgBox.innerHTML = "";
+  };
+  tabSignup.onclick = () => {
+    tabSignup.classList.add("active");
+    tabLogin.classList.remove("active");
+    signupForm.style.display = "block";
+    loginForm.style.display = "none";
+    msgBox.innerHTML = "";
+  };
+
+  function showMsg(text, type = "info") {
+    msgBox.innerHTML = `<div class="form-msg ${type}">${text}</div>`;
+  }
+
+  function friendlyError(err) {
+    const code = err.code || "";
+    if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found")) {
+      return "이메일 또는 비밀번호가 올바르지 않습니다.";
+    }
+    if (code.includes("email-already-in-use")) return "이미 가입된 이메일입니다.";
+    if (code.includes("weak-password")) return "비밀번호는 6자 이상이어야 합니다.";
+    if (code.includes("invalid-email")) return "이메일 형식이 올바르지 않습니다.";
+    return "오류가 발생했습니다: " + (err.message || code);
+  }
+
+  loginForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const email = document.getElementById("loginEmail").value.trim();
+    const password = document.getElementById("loginPassword").value;
+    showMsg("로그인 중...", "info");
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      const userDoc = await getDoc(doc(db, "users", cred.user.uid));
+      if (!userDoc.exists()) {
+        showMsg("계정 정보를 찾을 수 없습니다. 관리자에게 문의하세요.", "error");
+        await signOut(auth);
+        return;
+      }
+      const data = userDoc.data();
+      if (!data.approved) {
+        showMsg("아직 관리자 승인 대기 중입니다. 승인 후 로그인해 주세요.", "info");
+        await signOut(auth);
+        return;
+      }
+      window.location.href = "dashboard.html";
+    } catch (err) {
+      showMsg(friendlyError(err), "error");
+    }
+  });
+
+  signupForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = document.getElementById("signupName").value.trim();
+    const institution = document.getElementById("signupInstitution").value.trim();
+    const email = document.getElementById("signupEmail").value.trim();
+    const password = document.getElementById("signupPassword").value;
+    showMsg("가입 처리 중...", "info");
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      await setDoc(doc(db, "users", cred.user.uid), {
+        name,
+        institution,
+        email,
+        approved: false,
+        isAdmin: false,
+        createdAt: new Date().toISOString(),
+      });
+      await signOut(auth);
+      signupForm.reset();
+      showMsg("가입 신청이 완료되었습니다. 관리자 승인 후 로그인하실 수 있습니다.", "success");
+    } catch (err) {
+      showMsg(friendlyError(err), "error");
+    }
+  });
+</script>
+</body>
+</html>
