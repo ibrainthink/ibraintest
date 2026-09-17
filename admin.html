@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>iBrain | 관리자</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#1b2f4b" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="icon" href="icon-192.png" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <svg width="20" height="18" viewBox="0 0 44 40" fill="none">
+        <polygon points="22,2 40,12 40,28 22,38 4,28 4,12" fill="none" stroke="#fff" stroke-width="3"/>
+        <polygon points="22,11 32,17 32,25 22,31 12,25 12,17" fill="#d98a3d"/>
+      </svg>
+      iBrain
+    </div>
+    <div class="brand-sub">테스트지 평가 시스템</div>
+    <nav>
+      <a href="dashboard.html">학생 목록</a>
+      <a href="admin.html" class="active">관리자 페이지</a>
+    </nav>
+    <div class="spacer"></div>
+    <div class="user-email" id="userEmail"></div>
+    <button class="logout-btn" id="logoutBtn">로그아웃</button>
+  </aside>
+
+  <main class="main">
+    <div class="page-head">
+      <div>
+        <h2>계정 관리</h2>
+        <div class="count">가입 승인 및 사용자 권한을 관리합니다.</div>
+      </div>
+    </div>
+
+    <div class="section-title">승인 대기중</div>
+    <div id="pendingBox" class="loading-line">불러오는 중...</div>
+
+    <div class="section-title">승인된 사용자</div>
+    <div id="approvedBox" class="loading-line">불러오는 중...</div>
+  </main>
+</div>
+
+<script type="module">
+  import { auth, db } from "./firebase-config.js";
+  import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  import {
+    doc, getDoc, collection, onSnapshot, updateDoc, deleteDoc, query, orderBy,
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+  let myUid = null;
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = "index.html"; return; }
+    const userDoc = await getDoc(doc(db, "users", user.uid));
+    if (!userDoc.exists() || !userDoc.data().approved) {
+      await signOut(auth);
+      window.location.href = "index.html";
+      return;
+    }
+    if (!userDoc.data().isAdmin) {
+      alert("관리자만 접근할 수 있는 페이지입니다.");
+      window.location.href = "dashboard.html";
+      return;
+    }
+    myUid = user.uid;
+    document.getElementById("userEmail").textContent = user.email;
+    watchUsers();
+  });
+
+  document.getElementById("logoutBtn").onclick = () => signOut(auth).then(() => window.location.href = "index.html");
+
+  function escapeHtml(str) {
+    return String(str || "").replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+  }
+
+  function watchUsers() {
+    const q = query(collection(db, "users"), orderBy("createdAt", "desc"));
+    onSnapshot(q, (snap) => {
+      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      renderPending(all.filter((u) => !u.approved));
+      renderApproved(all.filter((u) => u.approved));
+    });
+  }
+
+  function renderPending(list) {
+    const box = document.getElementById("pendingBox");
+    if (list.length === 0) { box.innerHTML = `<div class="empty-state">승인 대기중인 계정이 없습니다.</div>`; return; }
+    box.innerHTML = `
+      <table class="admin-table">
+        <thead><tr><th>이름</th><th>소속</th><th>이메일</th><th></th></tr></thead>
+        <tbody>
+          ${list.map((u) => `
+            <tr>
+              <td>${escapeHtml(u.name)}</td>
+              <td>${escapeHtml(u.institution)}</td>
+              <td>${escapeHtml(u.email)}</td>
+              <td><button class="btn-accent btn-sm" data-approve="${u.id}">승인</button>
+                  <button class="btn-danger btn-sm" data-reject="${u.id}">거절(삭제)</button></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+    box.querySelectorAll("[data-approve]").forEach((btn) => {
+      btn.onclick = () => updateDoc(doc(db, "users", btn.dataset.approve), { approved: true });
+    });
+    box.querySelectorAll("[data-reject]").forEach((btn) => {
+      btn.onclick = () => {
+        if (confirm("이 가입 신청을 거절하고 삭제할까요?")) deleteDoc(doc(db, "users", btn.dataset.reject));
+      };
+    });
+  }
+
+  function renderApproved(list) {
+    const box = document.getElementById("approvedBox");
+    if (list.length === 0) { box.innerHTML = `<div class="empty-state">승인된 사용자가 없습니다.</div>`; return; }
+    box.innerHTML = `
+      <table class="admin-table">
+        <thead><tr><th>이름</th><th>소속</th><th>이메일</th><th>권한</th><th></th></tr></thead>
+        <tbody>
+          ${list.map((u) => `
+            <tr>
+              <td>${escapeHtml(u.name)}</td>
+              <td>${escapeHtml(u.institution)}</td>
+              <td>${escapeHtml(u.email)}</td>
+              <td>${u.isAdmin ? '<span class="badge admin">관리자</span>' : '<span class="badge approved">일반</span>'}</td>
+              <td>
+                ${u.id !== myUid ? `<button class="btn-ghost btn-sm" data-revoke="${u.id}">승인 취소</button>` : `<span style="color:var(--text-mute); font-size:12px;">본인 계정</span>`}
+              </td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    `;
+    box.querySelectorAll("[data-revoke]").forEach((btn) => {
+      btn.onclick = () => {
+        if (confirm("이 사용자의 승인을 취소할까요? 다시 로그인할 수 없게 됩니다.")) {
+          updateDoc(doc(db, "users", btn.dataset.revoke), { approved: false });
+        }
+      };
+    });
+  }
+</script>
+</body>
+</html>
