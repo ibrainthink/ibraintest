@@ -1,43 +1,325 @@
 import { app, auth, db } from './firebase-config.js';
-import { onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
-import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
-import { getStorage, ref, list, getDownloadURL, getBytes } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
-import { DOMAINS, classifyFilename } from './pdf-catalog.js';
-import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.min.mjs';
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.10.38/pdf.worker.min.mjs';
 
-const storage=getStorage(app), $=id=>document.getElementById(id);
-let catalog=[],groups=[],selectedFiles=[],approved=false,generation=0,fontLevel=Number(localStorage.getItem('iBrainFontLevel')||0);
-let activeFile=null, activeUrl='';
-const pdfCache=new Map();
-const option=(s,v,l)=>{const o=document.createElement('option');o.value=v;o.textContent=l;s.append(o)};
-const status=t=>{$('status').textContent=t};
+import {
+  onAuthStateChanged,
+  signOut
+} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js';
 
-function applyFont(){fontLevel=Math.max(-2,Math.min(5,fontLevel));const n=1+fontLevel*.1;document.documentElement.style.setProperty('--library-scale',n);$('fontLabel').textContent=Math.round(n*100)+'%';localStorage.setItem('iBrainFontLevel',fontLevel)}
-$('fontDown').onclick=()=>{fontLevel--;applyFont()}; $('fontUp').onclick=()=>{fontLevel++;applyFont()}; applyFont();
+import {
+  doc,
+  getDoc
+} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
-function err(e){console.error(e);if(e?.code==='storage/unauthorized')return '자료 접근 권한이 없습니다. Storage 규칙을 확인해 주세요.';return 'PDF를 불러오지 못했습니다. 다시 시도해 주세요.'}
-async function scan(folder,out,run){let token;do{const page=await list(folder,{maxResults:100,...(token?{pageToken:token}:{})});if(run!==generation)return;page.items.filter(x=>/\.pdf$/i.test(x.name)).forEach(x=>out.push({ref:x,name:x.name,...classifyFilename(x.name)}));for(const p of page.prefixes)await scan(p,out,run);token=page.nextPageToken}while(token&&run===generation)}
-function fillStars(){const d=$('domain').value,s=$('stars');s.replaceChildren();option(s,'','난이도 선택');$('qty').replaceChildren();option($('qty'),'','개수 선택');$('qty').disabled=true;$('addSet').disabled=true;if(!d){s.disabled=true;return}const levels=[...new Set(catalog.filter(f=>f.domain===d).map(f=>f.stars??'unknown'))].sort((a,b)=>a==='unknown'?1:b==='unknown'?-1:a-b);levels.forEach(n=>option(s,String(n),n==='unknown'?'난이도 미분류':'★'.repeat(Number(n))));s.disabled=false}
-function fillQty(){const d=$('domain').value,s=$('stars').value,q=$('qty');q.replaceChildren();option(q,'','개수 선택');if(!d||!s){q.disabled=true;return}const n=catalog.filter(f=>f.domain===d&&String(f.stars??'unknown')===s).length;for(let i=1;i<=Math.min(20,n);i++)option(q,i,i+'개');q.disabled=!n;$('addSet').disabled=true}
-$('qty').onchange=()=>{$('addSet').disabled=!$('qty').value};
-function shuffle(a){a=[...a];for(let i=a.length-1;i;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
-function rebuild(){const used=new Set();selectedFiles=[];groups.forEach(g=>{const p=shuffle(catalog.filter(f=>f.domain===g.domain&&String(f.stars??'unknown')===g.stars&&!used.has(f.name))).slice(0,g.count);p.forEach(f=>{used.add(f.name);selectedFiles.push(f)});g.actual=p.length});render()}
-function escapeHtml(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+import {
+  getStorage,
+  ref,
+  list,
+  getDownloadURL
+} from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage.js';
 
-/* 핵심: PDF.js가 Storage URL을 직접 읽지 않고 Firebase SDK가 바이트를 가져옵니다. */
-async function loadPdf(file){
-  if(pdfCache.has(file.ref.fullPath)) return pdfCache.get(file.ref.fullPath);
-  const bytes=await getBytes(file.ref,25*1024*1024);
-  const pdf=await pdfjsLib.getDocument({data:new Uint8Array(bytes)}).promise;
-  pdfCache.set(file.ref.fullPath,pdf); return pdf;
+import {
+  DOMAINS,
+  classifyFilename
+} from './pdf-catalog.js';
+
+
+const storage = getStorage(app);
+const $ = id => document.getElementById(id);
+
+let catalog = [];
+let groups = [];
+let selectedFiles = [];
+let approved = false;
+let generation = 0;
+
+let fontLevel =
+  Number(localStorage.getItem('iBrainFontLevel') || 0);
+
+
+/* =========================
+   글씨 크기
+========================= */
+
+function applyFont() {
+
+  fontLevel = Math.max(-2, Math.min(5, fontLevel));
+
+  const scale = 1 + fontLevel * 0.1;
+
+  document.documentElement.style.setProperty(
+    '--library-scale',
+    String(scale)
+  );
+
+  const label = $('fontLabel');
+
+  if (label) {
+    label.textContent =
+      Math.round(scale * 100) + '%';
+  }
+
+  localStorage.setItem(
+    'iBrainFontLevel',
+    String(fontLevel)
+  );
 }
-async function draw(pdf,canvas,width){const page=await pdf.getPage(1),base=page.getViewport({scale:1}),scale=Math.max(.2,width/base.width),vp=page.getViewport({scale}),r=Math.min(devicePixelRatio||1,2);canvas.width=Math.floor(vp.width*r);canvas.height=Math.floor(vp.height*r);canvas.style.width=Math.floor(vp.width)+'px';canvas.style.height=Math.floor(vp.height)+'px';await page.render({canvasContext:canvas.getContext('2d'),viewport:vp,transform:r===1?null:[r,0,0,r,0,0]}).promise}
-async function thumb(file,canvas,label){try{const pdf=await loadPdf(file);await draw(pdf,canvas,Math.max(110,(canvas.parentElement.clientWidth||170)-10));label.remove()}catch(e){console.error(e);label.textContent='미리보기 실패 · 눌러서 다시 시도'}}
-async function showFile(file,card){document.querySelectorAll('.pdf-thumb-card').forEach(x=>x.classList.remove('active'));card?.classList.add('active');$('selected').textContent=file.name;$('largePreviewName').textContent=file.name;$('largePreview').hidden=false;try{status('큰 미리보기 불러오는 중…');const pdf=await loadPdf(file);await draw(pdf,$('largeCanvas'),Math.min(760,Math.max(280,$('largePreview').clientWidth-28)));activeFile=file;activeUrl=await getDownloadURL(file.ref);$('open').disabled=false;status('미리보기 준비 완료');$('largePreview').scrollIntoView({behavior:'smooth',block:'start'})}catch(e){status(err(e))}}
-function render(){const b=$('bundle');b.replaceChildren();$('totalCount').textContent='총 '+selectedFiles.length+'개';if(!groups.length)b.innerHTML='<p class="empty">위에서 영역·난이도·개수를 선택해 추가하세요.</p>';else groups.forEach(g=>{const x=document.createElement('div');x.className='bundle-chip';x.append(document.createTextNode(g.domain+' · '+(g.stars==='unknown'?'미분류':'★'.repeat(Number(g.stars)))+' · '+(g.actual??g.count)+'개'));const z=document.createElement('button');z.textContent='×';z.onclick=()=>{groups=groups.filter(v=>v!==g);rebuild()};x.append(z);b.append(x)});const off=!groups.length;$('clearBundle').disabled=off;$('reroll').disabled=off;$('makePreview').disabled=off;$('print').disabled=!selectedFiles.length;$('open').disabled=true;$('largePreview').hidden=true;activeFile=null;activeUrl='';const p=$('previewList');p.replaceChildren();if(!selectedFiles.length){p.innerHTML='<p class="empty">아직 선택된 문제가 없습니다.</p>';return}selectedFiles.forEach((f,i)=>{const c=document.createElement('button');c.type='button';c.className='pdf-thumb-card';c.innerHTML=`<div class="thumb-canvas-wrap"><canvas></canvas><div class="thumb-loading">미리보기 불러오는 중…</div></div><div class="thumb-name">${i+1}. ${escapeHtml(f.name)}</div>`;c.onclick=()=>showFile(f,c);p.append(c);thumb(f,c.querySelector('canvas'),c.querySelector('.thumb-loading'))})}
 
-async function printAll(){if(!selectedFiles.length)return;status('인쇄용 PDF를 합치는 중…');try{if(!window.PDFLib)throw new Error('PDFLib missing');const merged=await PDFLib.PDFDocument.create();for(const f of selectedFiles){const bytes=await getBytes(f.ref,25*1024*1024),src=await PDFLib.PDFDocument.load(bytes),pages=await merged.copyPages(src,src.getPageIndices());pages.forEach(p=>merged.addPage(p))}const blob=new Blob([await merged.save()],{type:'application/pdf'}),url=URL.createObjectURL(blob),w=window.open(url,'_blank');if(!w)location.href=url;status('선택한 문제를 한 파일로 만들었습니다. 열린 PDF에서 인쇄하세요.');setTimeout(()=>URL.revokeObjectURL(url),120000)}catch(e){status('한 파일로 합치지 못했습니다. 새 창에서 개별 PDF를 열어 인쇄해 주세요.');console.error(e)}}
-async function reload(){if(!approved)return;const run=++generation;$('reload').disabled=true;status('PDF 목록을 불러오는 중…');try{const found=[];await scan(ref(storage,'evaluation-pdfs'),found,run);if(run!==generation)return;catalog=found.sort((a,b)=>a.name.localeCompare(b.name,'ko',{numeric:true}));const d=$('domain');d.replaceChildren();option(d,'','영역 선택');[...DOMAINS.map(x=>x.label),'미분류'].filter(x=>catalog.some(f=>f.domain===x)).forEach(x=>option(d,x,x));d.disabled=false;fillStars();status('PDF '+catalog.length+'개 불러옴')}catch(e){status(err(e))}finally{$('reload').disabled=false}}
-$('domain').onchange=fillStars;$('stars').onchange=fillQty;$('addSet').onclick=()=>{const d=$('domain').value,s=$('stars').value,n=Number($('qty').value);if(d&&s&&n){groups.push({domain:d,stars:s,count:n});rebuild();status('선택 완료 · 총 '+selectedFiles.length+'개')}};$('clearBundle').onclick=()=>{groups=[];selectedFiles=[];rebuild();status('모두 비웠습니다.')};$('reroll').onclick=()=>{rebuild();status('다시 뽑았습니다.')};$('makePreview').onclick=()=>{$('previewList').scrollIntoView({behavior:'smooth'});status('작은 미리보기를 누르면 크게 볼 수 있습니다.')};$('closeLarge').onclick=()=>{$('largePreview').hidden=true};$('open').onclick=()=>{if(activeUrl)window.open(activeUrl,'_blank','noopener')};$('print').onclick=printAll;$('reload').onclick=reload;$('logoutBtn').onclick=()=>signOut(auth).then(()=>location.href='index.html');
-onAuthStateChanged(auth,async user=>{const run=++generation;approved=false;$('adminLink').hidden=true;if(!user){location.href='index.html';return}try{const a=await getDoc(doc(db,'users',user.uid));if(run!==generation)return;if(!a.exists()||a.data().approved!==true){await signOut(auth);return}approved=true;$('userEmail').textContent=user.email||'';$('adminLink').hidden=!a.data().isAdmin;await reload()}catch(e){status(err(e))}});
+
+if ($('fontDown')) {
+  $('fontDown').onclick = () => {
+    fontLevel--;
+    applyFont();
+  };
+}
+
+if ($('fontUp')) {
+  $('fontUp').onclick = () => {
+    fontLevel++;
+    applyFont();
+  };
+}
+
+applyFont();
+
+
+/* =========================
+   기본 함수
+========================= */
+
+function option(select, value, label) {
+
+  const o = document.createElement('option');
+
+  o.value = value;
+  o.textContent = label;
+
+  select.append(o);
+}
+
+
+function setStatus(text) {
+
+  if ($('status')) {
+    $('status').textContent = text;
+  }
+}
+
+
+function errorMessage(error) {
+
+  console.error(
+    '문제자료실 오류',
+    error
+  );
+
+  if (
+    error?.code ===
+    'storage/unauthorized'
+  ) {
+    return '자료 접근 권한이 없습니다.';
+  }
+
+  if (
+    error?.code ===
+    'storage/object-not-found'
+  ) {
+    return 'PDF 파일을 찾을 수 없습니다.';
+  }
+
+  return 'PDF를 불러오지 못했습니다.';
+}
+
+
+/* =========================
+   Firebase PDF 목록
+========================= */
+
+async function scan(
+  folder,
+  results,
+  run
+) {
+
+  let pageToken;
+
+  do {
+
+    const page = await list(
+      folder,
+      {
+        maxResults: 100,
+        ...(pageToken
+          ? { pageToken }
+          : {})
+      }
+    );
+
+    if (run !== generation) {
+      return;
+    }
+
+    for (const item of page.items) {
+
+      if (/\.pdf$/i.test(item.name)) {
+
+        results.push({
+          ref: item,
+          name: item.name,
+          ...classifyFilename(
+            item.name
+          )
+        });
+      }
+    }
+
+    for (
+      const prefix
+      of page.prefixes
+    ) {
+
+      await scan(
+        prefix,
+        results,
+        run
+      );
+    }
+
+    pageToken =
+      page.nextPageToken;
+
+  } while (
+    pageToken &&
+    run === generation
+  );
+}
+
+
+/* =========================
+   영역 / 난이도 / 개수
+========================= */
+
+function fillStars() {
+
+  const stars = $('stars');
+  const domain =
+    $('domain').value;
+
+  stars.replaceChildren();
+
+  option(
+    stars,
+    '',
+    '난이도 선택'
+  );
+
+  $('qty').replaceChildren();
+
+  option(
+    $('qty'),
+    '',
+    '개수 선택'
+  );
+
+  $('qty').disabled = true;
+  $('addSet').disabled = true;
+
+  if (!domain) {
+
+    stars.disabled = true;
+    return;
+  }
+
+  const levels = [
+    ...new Set(
+      catalog
+        .filter(
+          f =>
+            f.domain === domain
+        )
+        .map(
+          f =>
+            f.stars ??
+            'unknown'
+        )
+    )
+  ];
+
+  levels.sort(
+    (a, b) => {
+
+      if (a === 'unknown') {
+        return 1;
+      }
+
+      if (b === 'unknown') {
+        return -1;
+      }
+
+      return a - b;
+    }
+  );
+
+  levels.forEach(
+    n => {
+
+      option(
+        stars,
+        String(n),
+
+        n === 'unknown'
+          ? '난이도 미분류'
+          : '★'.repeat(
+              Number(n)
+            )
+      );
+    }
+  );
+
+  stars.disabled = false;
+}
+
+
+function fillQty() {
+
+  const domain =
+    $('domain').value;
+
+  const stars =
+    $('stars').value;
+
+  const qty = $('qty');
+
+  qty.replaceChildren();
+
+  option(
+    qty,
+    '',
+    '개수 선택'
+  );
+
+  if (
+    !domain ||
+    !stars
+  ) {
+
+    qty.disabled = true;
+    $('addSet').disabled = true;
+
+    return;
+  }
+
+  const count =
+    catalog.filter(
+      f =>
+        f.domain === domain &&
+        String(
+          f.stars ??
+          'unknown'
+        ) === stars
+    ).length;
+
+  for (
+    let i = 1;
+    i <= Math.min(
+      count,
+     
