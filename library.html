@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>iBrain | 문제자료실</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="pdf-library.css">
+  <style>
+    .age-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0 24px}
+    .age-card{border:1px solid #d8e1ec;border-radius:12px;background:#fff;padding:20px 10px;cursor:pointer;font:inherit;text-align:center;color:#26384d}
+    .age-card strong{display:block;font-size:1.3em}.age-card small{display:block;margin-top:8px;color:#64748b}
+    .age-card.selected{border:2px solid #2563eb;background:#eff6ff}.age-card:disabled{opacity:.55;cursor:not-allowed}
+    .age-preview{background:#fff;border:1px solid #d8e1ec;border-radius:12px;padding:16px;margin-top:12px}
+    .age-actions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
+    .pdf-pages{display:grid;gap:14px;justify-items:center;background:#eef1f5;border:1px solid #d8e1ec;border-radius:10px;padding:12px;min-height:160px;max-height:75vh;overflow-y:auto}.pdf-pages canvas{display:block;width:100%;height:auto;max-width:850px;background:white;box-shadow:0 2px 9px #0002}.pdf-loading{color:#475569;text-align:center;padding:22px 8px}
+    .age-note{color:#64748b;font-size:.9em}
+    @media(max-width:480px){.age-grid{gap:8px}.age-card{padding:16px 5px}.pdf-pages{max-height:68vh;padding:7px;gap:9px}}
+  </style>
+</head>
+<body>
+<div class="library-app">
+  <header class="library-topbar">
+    <div class="brand-row"><strong>iBrain</strong><span>문제자료실</span></div>
+    <div class="top-actions">
+      <div class="font-control"><span>글씨크기</span><button id="fontDown" type="button">−</button><span id="fontLabel">100%</span><button id="fontUp" type="button">＋</button></div>
+      <button id="logoutBtn" class="logout-small" type="button">로그아웃</button>
+    </div>
+    <nav><a href="dashboard.html">학생 목록</a><a class="active" href="library.html">문제자료실</a><a href="admin.html" id="adminLink" hidden>관리자</a></nav>
+  </header>
+  <main class="library-main">
+    <div class="library-head"><div><h1>문제자료실</h1><p>나이를 선택하면 평가지를 확인하고 인쇄할 수 있습니다.</p></div><button id="reload" class="btn-ghost" type="button" disabled>새로고침</button></div>
+    <p id="status" role="status">로그인 확인 중…</p>
+    <section class="builder-card">
+      <h2>나이별 평가지</h2>
+      <div id="ageGrid" class="age-grid" aria-label="나이 선택"></div>
+      <p class="age-note">준비 중인 나이는 PDF를 업로드한 뒤 새로고침하면 사용할 수 있습니다.</p>
+    </section>
+    <section id="previewSection" class="age-preview" hidden>
+      <h2 id="previewTitle">평가지 미리보기</h2>
+      <div class="age-actions">
+        <button id="open" class="btn-ghost" type="button">새 창에서 열기</button>
+        <button id="print" class="btn-primary" type="button">인쇄하기</button>
+      </div>
+      <div id="pdfPages" class="pdf-pages" role="region" aria-label="평가지 PDF 미리보기"><p class="pdf-loading">평가지를 선택하면 이곳에 바로 표시됩니다.</p></div>
+      <p class="age-note">휴대폰에서도 평가지가 화면에 바로 표시됩니다. 표시되지 않으면 ‘새 창에서 열기’를 이용하세요. 인쇄는 PDF 뷰어의 인쇄 메뉴에서도 가능합니다.</p>
+    </section>
+    <div id="userEmail" class="user-email-bottom"></div>
+  </main>
+</div>
+<script type="module" src="pdf-library.js"></script>
+</body>
+</html>
