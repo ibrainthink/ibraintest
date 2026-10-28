@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>iBrain | 수학적 사고력 결과</title><link rel="stylesheet" href="report.css"></head>
+<body><div class="toolbar"><a href="dashboard.html">← 학생 목록</a><span id="status">결과를 불러오는 중…</span><button id="printBtn" type="button" disabled>결과지 출력</button></div>
+<main class="paper" id="paper">
+<header class="header"><div class="brand"><img src="report-logo.png" alt="iBrain 생각의고수 로고"></div><div class="eyebrow">INDIVIDUAL LEARNING REPORT</div></header>
+<div class="headline"><div><h1>우리 아이 <em>수학적 사고력</em> 결과</h1><p>사고력 6개 영역과 학습 특성 5개 항목을 종합적으로 살펴봅니다.</p></div></div>
+<div class="meta"><div>이름 <strong id="name">—</strong></div><div>연령 <strong id="age">—</strong></div><div>결과 확인일 <strong id="date">—</strong></div></div>
+<section class="section"><h2><span>01</span> 수학적 사고력 영역별 결과</h2><div class="section-grid"><img class="section-watermark" src="report-logo.png" alt="" aria-hidden="true"><div class="chart-box"><div id="chart1"></div></div><div class="table-box" id="domains1"></div></div><div class="summary"><b>영역별 종합 분석</b><div id="overall1"></div></div></section>
+<section class="section"><h2><span>02</span> 학습 특성 및 성취도 결과</h2><div class="section-grid"><img class="section-watermark" src="report-logo.png" alt="" aria-hidden="true"><div class="chart-box"><div id="chart2"></div></div><div class="table-box" id="domains2"></div></div><div class="summary"><b>학습 특성 종합 분석</b><div id="overall2"></div></div></section>
+<section class="section final"><h2><span>03</span> 최종 종합 결과</h2><div id="finalSummary"></div></section>
+<footer><span>iBrain 생각의고수</span><img src="report-logo.png" alt="iBrain 생각의고수 로고"></footer>
+</main><script type="module" src="report.js"></script></body></html>
